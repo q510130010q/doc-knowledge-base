@@ -1,26 +1,30 @@
 # doc-knowledge-base
 
-将大型文档转 Markdown → 切片 → 存向量库 → 通过 MCP Server 供 Claude Code、opencode 等 CLI 工具检索，大幅节省 token 消耗。
+将大型文档转 Markdown → 切片 → 存向量库 → 通过 MCP Server 供 Claude Code、opencode 等 CLI 工具检索，token节省约 50%。
 
 ## 快速开始
 
 ```bash
-# 从源码安装
+# 1. 从源码安装
 git clone https://github.com/q510130010q/doc-knowledge-base.git
 cd doc-knowledge-base
 pip install .
 
-# 导入文档
+# 2. 配置集成（以 opencode 为例）
+# 在 opencode.json 中添加 MCP 配置（详见下方集成说明）
+
+# 3. 启动 opencode，MCP Server 将随 opencode 自动启动
+Claude Code可能需要手动启动：doc-kb serve
+
+# 4. 导入文档到知识库
 doc-kb import-doc document.pdf
 
-# 查询
-doc-kb query "你的问题"
-
-# 启动 MCP Server（供 opencode 调用）
-doc-kb serve
+# 5. 在对话中提问，LLM 会自动调用 search_docs 检索知识库
 ```
 
 > 本项目尚未发布到 PyPI，需从源码安装。开发模式可使用 `pip install -e .`。
+
+> 正确步骤：**安装 → 配置集成 → 启动 opencode（MCP 自动运行） → 导入 → 查询**
 
 ## 架构
 

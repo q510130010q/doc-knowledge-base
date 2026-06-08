@@ -1,0 +1,9 @@
+data/raw/
+data/md/
+data/chroma/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+dist/
+build/

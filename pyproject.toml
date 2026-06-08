@@ -1,0 +1,25 @@
+[project]
+name = "doc-knowledge-base"
+version = "0.1.0"
+description = "Convert documents to Markdown, chunk, and store in vector DB for RAG via MCP"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "doc-knowledge-base contributors"},
+]
+
+dependencies = [
+    "markitdown>=0.1.0",
+    "chromadb>=0.5.0",
+    "sentence-transformers>=2.2.0",
+    "langchain-text-splitters>=1.0.0",
+    "mcp>=1.0.0",
+    "click>=8.0.0",
+]
+
+[project.scripts]
+doc-kb = "doc_kb.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["doc_kb*"]

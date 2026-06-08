@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any
 
@@ -6,7 +7,11 @@ from chromadb.utils import embedding_functions
 
 
 COLLECTION_NAME = "documents"
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
+
+# Pattern to identify function/class/method names in queries.
+# Use ASCII-only word chars to avoid matching CJK characters.
+_FUNC_NAME_RE = re.compile(r"[A-Z][A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
 
 
 class VectorStore:
@@ -34,26 +39,94 @@ class VectorStore:
         return len(chunks)
 
     def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
+        # 1. Vector search (semantic)
+        semantic: list[dict[str, Any]] = []
         try:
             results = self.collection.query(
                 query_texts=[query],
-                n_results=top_k,
+                n_results=top_k * 2,
             )
+            if results["ids"] and results["ids"][0]:
+                for i in range(len(results["ids"][0])):
+                    semantic.append({
+                        "id": results["ids"][0][i],
+                        "text": results["documents"][0][i],
+                        "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
+                        "distance": results["distances"][0][i] if results.get("distances") else 0,
+                    })
         except Exception:
-            return []
+            pass
 
-        output: list[dict[str, Any]] = []
-        if not results["ids"] or not results["ids"][0]:
-            return output
+        # 2. Keyword matching: boost chunks that contain function/API names from the query
+        keywords = _FUNC_NAME_RE.findall(query)
+        # Only keep meaningful-looking identifiers (≥4 chars, has uppercase mix)
+        keywords = [kw for kw in keywords if len(kw) >= 3]
 
-        for i in range(len(results["ids"][0])):
-            output.append({
-                "id": results["ids"][0][i],
-                "text": results["documents"][0][i],
-                "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                "distance": results["distances"][0][i] if results.get("distances") else 0,
-            })
-        return output
+        if keywords:
+            try:
+                all_data = self.collection.get()
+                keyword_hits: list[dict[str, Any]] = []
+                seen_ids = {r["id"] for r in semantic}
+
+                for i, doc in enumerate(all_data["documents"]):
+                    for kw in keywords:
+                        if kw in doc:
+                            chunk_id = all_data["ids"][i]
+                            # Boost distance based on how "definition-like" the chunk is.
+                            # Chunks with 指令说明/指令原型/指令参数 near the function name
+                            # are likely the actual definition, not just a code example.
+                            raw_distance = 0.25  # default keyword hit
+                            if kw in doc:
+                                # Check for definition indicators within the same chunk
+                                def_indicators = [
+                                    "指令说明", "指令原型", "指令参数",
+                                    "指令类型", "指令返回值", "相关指令",
+                                ]
+                                near_def = 0
+                                for indicator in def_indicators:
+                                    pos_indicator = doc.find(indicator)
+                                    pos_kw = doc.find(kw)
+                                    if pos_indicator != -1 and pos_kw != -1:
+                                        # Indicator within 500 chars of keyword
+                                        if abs(pos_indicator - pos_kw) < 500:
+                                            near_def += 1
+                                # Boost: each definition indicator reduces distance
+                                if near_def >= 2:
+                                    raw_distance = 0.08
+                                elif near_def >= 1:
+                                    raw_distance = 0.15
+
+                            if chunk_id in seen_ids:
+                                for r in semantic:
+                                    if r["id"] == chunk_id:
+                                        r["distance"] = min(r["distance"], raw_distance)
+                                        break
+                            else:
+                                keyword_hits.append({
+                                    "id": chunk_id,
+                                    "text": doc,
+                                    "metadata": all_data["metadatas"][i] if all_data["metadatas"] else {},
+                                    "distance": raw_distance,
+                                })
+                            break  # one match per doc is enough
+
+                # 3. Merge: keyword hits first (low distance = relevant),
+                # then semantic results, deduped by id
+                merged = keyword_hits[:]
+                seen = {r["id"] for r in merged}
+                for r in semantic:
+                    if r["id"] not in seen:
+                        merged.append(r)
+                        seen.add(r["id"])
+
+                # Sort by distance (lower = more relevant)
+                merged.sort(key=lambda x: x["distance"])
+                return merged[:top_k]
+
+            except Exception:
+                pass
+
+        return semantic[:top_k]
 
     def list_sources(self) -> list[str]:
         try:

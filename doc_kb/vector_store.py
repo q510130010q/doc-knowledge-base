@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 import chromadb
-from chromadb.utils import embedding_functions
 
 
 logger = logging.getLogger(__name__)
@@ -12,9 +11,44 @@ logger = logging.getLogger(__name__)
 COLLECTION_NAME = "documents"
 EMBEDDING_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
-# Pattern to identify function/class/method names in queries.
-# Use ASCII-only word chars to avoid matching CJK characters.
-_FUNC_NAME_RE = re.compile(r"[A-Z][A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
+# Pattern to identify function/class/method/variable names in queries.
+# Supports PascalCase, camelCase, snake_case, and dotted namespaces.
+# Excludes simple lowercase words to avoid matching regular English prose.
+_FUNC_NAME_RE = re.compile(
+    r"\b"
+    r"(?:"
+    r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+"  # dotted paths: Math.sqrt, foo.bar
+    r"|[a-zA-Z0-9_]*_[a-zA-Z0-9_]+"                        # snake_case: gtn_move_absolute, _internal_var
+    r"|[A-Z][A-Za-z0-9_]*"                                  # PascalCase / UPPER_CASE: MoveAbsolute, CONFIG
+    r"|[a-z][a-z0-9_]*[A-Z][a-zA-Z0-9_]*"                   # camelCase: setDeviceStatus
+    r")"
+    r"\b"
+)
+
+
+class LazySentenceTransformerEmbeddingFunction:
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+        self._fn = None
+
+    def __call__(self, input: Any) -> Any:
+        if self._fn is None:
+            from chromadb.utils import embedding_functions
+            self._fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name=self.model_name
+            )
+        return self._fn(input)
+
+    def name(self) -> str:
+        return "sentence_transformer"
+
+    def __getattr__(self, name: str) -> Any:
+        if self._fn is None:
+            from chromadb.utils import embedding_functions
+            self._fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name=self.model_name
+            )
+        return getattr(self._fn, name)
 
 
 class VectorStore:
@@ -23,7 +57,7 @@ class VectorStore:
         self.persist_dir.mkdir(parents=True, exist_ok=True)
 
         self.client = chromadb.PersistentClient(path=str(self.persist_dir))
-        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+        self.embedding_fn = LazySentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL,
         )
         self.collection = self.client.get_or_create_collection(

@@ -3,8 +3,6 @@ from pathlib import Path
 
 import click
 
-from doc_kb.converter import Converter, ConversionError
-from doc_kb.chunker import Chunker
 from doc_kb.vector_store import VectorStore
 
 
@@ -23,7 +21,11 @@ def cli():
 @click.option("--chunk-overlap", default=200, show_default=True, help="Chunk overlap in characters")
 @click.option("--reset", is_flag=True, help="Clear existing data before import")
 @click.option("--replace", is_flag=True, help="Replace existing document if already imported")
-def import_doc(path, chunk_size, chunk_overlap, reset, replace):
+@click.option("-r", "--recursive", is_flag=True, help="Recursively import documents from subdirectories")
+def import_doc(path, chunk_size, chunk_overlap, reset, replace, recursive):
+    from doc_kb.converter import Converter, ConversionError
+    from doc_kb.chunker import Chunker
+
     converter = Converter()
     chunker = Chunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     store = VectorStore()
@@ -37,9 +39,10 @@ def import_doc(path, chunk_size, chunk_overlap, reset, replace):
         files = [input_path]
     else:
         files = []
+        search_fn = input_path.rglob if recursive else input_path.glob
         for ext in Converter.SUPPORTED_EXTENSIONS:
-            files.extend(input_path.glob(f"*{ext}"))
-            files.extend(input_path.glob(f"*{ext.upper()}"))
+            files.extend(search_fn(f"*{ext}"))
+            files.extend(search_fn(f"*{ext.upper()}"))
 
     if not files:
         click.echo("No supported documents found.", err=True)
@@ -91,22 +94,60 @@ def remove(source):
 
 
 @cli.command()
-@click.argument("query")
+@click.argument("query_str", required=False)
 @click.option("--top-k", default=5, show_default=True, help="Number of results")
-def query(query, top_k):
+@click.option("-i", "--interactive", is_flag=True, help="Enter interactive query mode")
+@click.option("-v", "--verbose", is_flag=True, help="Display the full content of chunks (no truncation)")
+def query(query_str, top_k, interactive, verbose):
+    if not query_str and not interactive:
+        click.echo("Error: Missing argument 'QUERY_STR' or option '--interactive'.", err=True)
+        sys.exit(1)
+
     store = VectorStore()
-    results = store.search(query, top_k=top_k)
-    if not results:
-        click.echo("No results found.")
-        return
-    click.echo(f"Top {len(results)} results for: {query}\n")
-    for r in results:
-        heading = r["metadata"].get("heading_path", "")
-        source = r["metadata"].get("source", "")
-        dist = r.get("distance", 0)
-        click.echo(f"[{source}] {heading}  (score: {1 - dist:.4f})")
-        click.echo(f"  {r['text'][:200]}...")
+
+    def run_one_query(q):
+        results = store.search(q, top_k=top_k)
+        if not results:
+            click.echo("No results found.")
+            return
+        click.echo(f"Top {len(results)} results for: {q}\n")
+        for r in results:
+            heading = r["metadata"].get("heading_path", "")
+            source = r["metadata"].get("source", "")
+            dist = r.get("distance", 0)
+            click.echo(f"[{source}] {heading}  (score: {1 - dist:.4f})")
+            
+            text = r['text']
+            if not verbose:
+                display_text = text.replace("\n", " ")
+                if len(display_text) > 200:
+                    display_text = display_text[:200] + "..."
+                click.echo(f"  {display_text}")
+            else:
+                indented = "\n".join("  " + line for line in text.split("\n"))
+                click.echo(indented)
+            click.echo()
+
+    if interactive:
+        click.echo("Entering interactive query mode. Press Ctrl+C or type 'exit' or 'quit' to exit.")
+        click.echo("Loading embedding model, please wait...")
+        _ = store.embedding_fn(["init"])
+        click.echo("Model loaded. Ready.")
         click.echo()
+        while True:
+            try:
+                q = click.prompt("query")
+                q_strip = q.strip()
+                if q_strip.lower() in {"exit", "quit"}:
+                    break
+                if not q_strip:
+                    continue
+                run_one_query(q_strip)
+            except (KeyboardInterrupt, click.Abort):
+                click.echo("\nExiting.")
+                break
+    else:
+        run_one_query(query_str)
 
 
 @cli.command()

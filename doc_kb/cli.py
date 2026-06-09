@@ -22,7 +22,8 @@ def cli():
 @click.option("--chunk-size", default=1000, show_default=True, help="Chunk size in characters")
 @click.option("--chunk-overlap", default=200, show_default=True, help="Chunk overlap in characters")
 @click.option("--reset", is_flag=True, help="Clear existing data before import")
-def import_doc(path, chunk_size, chunk_overlap, reset):
+@click.option("--replace", is_flag=True, help="Replace existing document if already imported")
+def import_doc(path, chunk_size, chunk_overlap, reset, replace):
     converter = Converter()
     chunker = Chunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     store = VectorStore()
@@ -49,6 +50,12 @@ def import_doc(path, chunk_size, chunk_overlap, reset):
         try:
             md_path = converter.convert(f)
             source_name = md_path.stem
+
+            if replace:
+                deleted = store.delete_source(source_name)
+                if deleted:
+                    click.echo(f"  Removed {deleted} old chunks for '{source_name}'")
+
             chunks = chunker.chunk_file(md_path, source=source_name)
             added = store.add_chunks(chunks)
             total_chunks += added
@@ -70,6 +77,17 @@ def list_docs():
     click.echo(f"Knowledge base: {count} chunks from {len(sources)} document(s)")
     for s in sources:
         click.echo(f"  - {s}")
+
+
+@cli.command()
+@click.argument("source")
+def remove(source):
+    store = VectorStore()
+    deleted = store.delete_source(source)
+    if deleted:
+        click.echo(f"Removed {deleted} chunks for '{source}'.")
+    else:
+        click.echo(f"Source '{source}' not found.")
 
 
 @cli.command()

@@ -2,17 +2,17 @@ from pathlib import Path
 
 from markitdown import MarkItDown
 
-SUPPORTED_EXTENSIONS = {
-    ".pdf", ".docx", ".pptx", ".xlsx",
-    ".html", ".htm", ".csv", ".json", ".xml", ".txt",
-}
-
 
 class ConversionError(Exception):
     pass
 
 
 class Converter:
+    SUPPORTED_EXTENSIONS = {
+        ".pdf", ".docx", ".pptx", ".xlsx",
+        ".html", ".htm", ".csv", ".json", ".xml", ".txt",
+    }
+
     def __init__(self, output_dir: str | Path = "data/md"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -20,7 +20,7 @@ class Converter:
 
     def convert(self, file_path: str | Path) -> Path:
         file_path = Path(file_path)
-        if file_path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        if file_path.suffix.lower() not in self.SUPPORTED_EXTENSIONS:
             raise ConversionError(f"Unsupported file type: {file_path.suffix}")
 
         try:
@@ -36,7 +36,7 @@ class Converter:
     def convert_all(self, input_dir: str | Path) -> list[Path]:
         input_dir = Path(input_dir)
         paths: list[Path] = []
-        for ext in SUPPORTED_EXTENSIONS:
+        for ext in self.SUPPORTED_EXTENSIONS:
             paths.extend(input_dir.glob(f"*{ext}"))
             paths.extend(input_dir.glob(f"*{ext.upper()}"))
         return [self.convert(p) for p in sorted(set(paths))]

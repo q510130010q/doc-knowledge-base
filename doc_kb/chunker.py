@@ -22,6 +22,12 @@ class Chunker:
         (re.compile(r"^\d+(?:\.\d+)+\s+\S.*$"), 2),
         # Instruction definition in Chinese manuals: 指令 205 GTN_FuncName
         (re.compile(r"^指令\s+\d+\s+[A-Za-z_]\w*.*$"), 2),
+        # Numbered list as heading: 1. Introduction, 2.3 Overview
+        (re.compile(r"^\d+\.\s+\S.*$"), 2),
+        # ALL-CAPS short lines (likely headings)
+        (re.compile(r"^[A-Z][A-Z\s]+[A-Z]$"), 1),
+        # Chinese numbered: 一、 二、 (一) (二)
+        (re.compile(r"^[（(]?[一二三四五六七八九十百千]+[）)、、]"), 2),
     ]
 
     def __init__(
@@ -46,7 +52,9 @@ class Chunker:
             chunk_overlap=chunk_overlap,
             separators=[
                 "\n## ", "\n### ", "\n#### ", "\n##### ", "\n###### ",
-                "\n\n", "\n", ". ", "? ", "! ", " ",
+                "\n\n", "\n",
+                "。", "？", "！", ".",
+                ". ", "? ", "! ", " ",
             ],
             length_function=len,
         )

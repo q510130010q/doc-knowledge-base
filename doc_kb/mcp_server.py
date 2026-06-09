@@ -9,7 +9,14 @@ from doc_kb.vector_store import VectorStore
 
 
 server = Server("doc-kb")
-store = VectorStore()
+_store: VectorStore | None = None
+
+
+def get_store() -> VectorStore:
+    global _store
+    if _store is None:
+        _store = VectorStore()
+    return _store
 
 
 @server.list_tools()
@@ -47,10 +54,12 @@ async def handle_list_tools() -> list[Tool]:
 
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    store = get_store()
+
     if name == "search_docs":
         query = arguments.get("query", "")
         top_k = min(int(arguments.get("top_k", 5)), 20)
-        results = store.search(query, top_k=top_k)
+        results = await asyncio.to_thread(store.search, query, top_k)
         if not results:
             return [TextContent(type="text", text="No relevant documents found in the knowledge base.")]
 
@@ -66,8 +75,8 @@ async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextCon
         return [TextContent(type="text", text="\n".join(lines))]
 
     elif name == "list_docs":
-        sources = store.list_sources()
-        count = store.count_chunks()
+        sources = await asyncio.to_thread(store.list_sources)
+        count = await asyncio.to_thread(store.count_chunks)
         if not sources:
             return [TextContent(type="text", text="Knowledge base is empty. Import documents using `doc-kb import`.")]
         lines = [f"Knowledge base: {count} chunks from {len(sources)} document(s):"]

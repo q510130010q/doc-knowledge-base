@@ -1,4 +1,5 @@
 # doc-knowledge-base
+> **Languages:** [English](README_EN.md) | [简体中文](README.md) 
 
 将大型文档转 Markdown → 切片 → 存向量库 → 通过 MCP Server 供 Claude Code、opencode 等 CLI 工具检索，token 节省约 50%。
 

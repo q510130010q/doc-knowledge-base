@@ -1,4 +1,5 @@
 # doc-knowledge-base
+> **Languages:** [English](README_EN.md) | [简体中文](README.md) 
 
 Convert large documents to Markdown → Chunk → Store in Vector DB → Search via MCP Server for CLI tools like Claude Code and opencode, saving ~50% in token usage.
 
